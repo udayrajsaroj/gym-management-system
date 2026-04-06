@@ -69,10 +69,10 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       
       if (editingUser) {
-        await axios.put(`http://localhost:5000/api/admin/update-user/${editingUser._id}`, formData, config);
+        await axios.put(`${import.meta.env.VITE_API_URL}/api/admin/update-user/${editingUser._id}`, formData, config);
         alert("Profile Updated!");
       } else {
-        await axios.post('http://localhost:5000/api/admin/add-user', formData, config);
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/add-user`, formData, config);
         alert("User Created!");
       }
       
