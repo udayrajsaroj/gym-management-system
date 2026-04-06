@@ -72,7 +72,7 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
     setLoading(true);
     try {
       const token = JSON.parse(localStorage.getItem('profile')).token;
-      await axios.post('http://localhost:5000/api/trainer/assign-workout', {
+      await axios.post(`${import.meta.env.VITE_API_URL}/api/trainer/assign-workout`, {
         memberId: member._id,
         exercises,
         instructions

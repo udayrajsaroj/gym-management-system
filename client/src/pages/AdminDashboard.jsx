@@ -69,7 +69,7 @@ const AdminDashboard = () => {
     if (window.confirm("Permanent Action: Remove this user from the IronPulse database?")) {
       try {
         const token = JSON.parse(localStorage.getItem('profile')).token;
-        await axios.delete(`http://localhost:5000/api/admin/delete-user/${id}`, {
+        await axios.delete(`${import.meta.env.VITE_API_URL}/api/admin/delete-user/${id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         fetchData();
