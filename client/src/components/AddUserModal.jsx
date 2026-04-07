@@ -12,6 +12,7 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
   // 1. Fetch Trainers list so Admin can assign them to Members
   useEffect(() => {
     const fetchTrainers = async () => {
+      if (!isOpen) return; // Modal open hone par hi fetch karein
       try {
         const token = JSON.parse(localStorage.getItem('profile')).token;
         const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/users`, {
@@ -20,25 +21,43 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
         // Filter to only get users with the 'trainer' role
         setTrainers(data.filter(u => u.role === 'trainer'));
       } catch (err) {
-        console.error("Error fetching trainers list");
+        console.error("Error fetching trainers list", err);
       }
     };
-    if (isOpen) fetchTrainers();
+    fetchTrainers();
   }, [isOpen]);
 
   // 2. Sync form when editing
   useEffect(() => {
-    if (editingUser) {
+    if (editingUser && isOpen) {
+      // FIX 1: Safe Date Parsing
+      let safeExpiryDate = '';
+      if (editingUser.expiryDate) {
+        const dateObj = new Date(editingUser.expiryDate);
+        if (!isNaN(dateObj.getTime())) {
+          safeExpiryDate = dateObj.toISOString().split('T')[0];
+        }
+      }
+
+      // FIX 2: Handle populated assignedTrainer object vs raw ID
+      let trainerId = '';
+      if (editingUser.assignedTrainer) {
+        trainerId = typeof editingUser.assignedTrainer === 'object' 
+          ? editingUser.assignedTrainer._id 
+          : editingUser.assignedTrainer;
+      }
+
       setFormData({
         name: editingUser.name || '',
         email: editingUser.email || '',
-        password: '',
+        password: '', // Keep empty for security, admin can leave blank if not updating
         role: editingUser.role || 'member',
         membershipStatus: editingUser.membershipStatus || 'active',
-        assignedTrainer: editingUser.assignedTrainer || '',
-        expiryDate: editingUser.expiryDate ? new Date(editingUser.expiryDate).toISOString().split('T')[0] : ''
+        assignedTrainer: trainerId || '',
+        expiryDate: safeExpiryDate
       });
     } else {
+      // Reset form when adding new user
       setFormData({
         name: '', email: '', password: '', role: 'member', 
         expiryDate: '', membershipStatus: 'active', assignedTrainer: ''
@@ -68,12 +87,18 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
       const token = JSON.parse(localStorage.getItem('profile')).token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
       
+      // Data to send (If password is empty during edit, remove it so backend doesn't overwrite with empty string)
+      const dataToSend = { ...formData };
+      if (editingUser && !dataToSend.password) {
+        delete dataToSend.password; 
+      }
+
       if (editingUser) {
-        await axios.put(`${import.meta.env.VITE_API_URL}/api/admin/update-user/${editingUser._id}`, formData, config);
-        alert("Profile Updated!");
+        await axios.put(`${import.meta.env.VITE_API_URL}/api/admin/update-user/${editingUser._id}`, dataToSend, config);
+        alert("Profile Updated Successfully!");
       } else {
-        await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/add-user`, formData, config);
-        alert("User Created!");
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/add-user`, dataToSend, config);
+        alert("User Created Successfully!");
       }
       
       onUserAdded();
@@ -109,7 +134,9 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
           </div>
 
           <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Password</label>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+              Password {editingUser && <span className="text-slate-500 lowercase">(leave blank to keep current)</span>}
+            </label>
             <input type="password" required={!editingUser} value={formData.password} className="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl mt-1 text-white outline-none focus:ring-2 focus:ring-blue-500"
               onChange={(e) => setFormData({...formData, password: e.target.value})} />
           </div>
@@ -149,8 +176,8 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
           )}
 
           <div className="md:col-span-2 flex gap-3 mt-6">
-            <button type="button" onClick={onClose} className="flex-1 bg-white/5 text-white font-bold py-4 rounded-xl">Cancel</button>
-            <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 disabled:opacity-50">
+            <button type="button" onClick={onClose} className="flex-1 bg-white/5 text-white font-bold py-4 rounded-xl hover:bg-white/10 transition-colors">Cancel</button>
+            <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-500 active:scale-95 disabled:opacity-50 transition-all">
               {loading ? "Saving..." : editingUser ? "Save Changes" : "Create User"}
             </button>
           </div>
