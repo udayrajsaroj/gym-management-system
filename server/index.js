@@ -24,6 +24,10 @@ app.use('/api/trainer', trainerRoutes);
 app.use('/api/member', memberRoutes);
 app.use('/api/attendance', attendanceRoutes);
 
+app.get('/ping', (req, res) => {
+  res.status(200).send('Awake');
+});
+
 // Database Connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Gym Database Connected Successfully"))
