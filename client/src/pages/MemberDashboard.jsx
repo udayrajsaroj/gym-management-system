@@ -56,11 +56,10 @@ const MemberDashboard = () => {
           );
           
           alert(`✅ ${scanRes.message}`);
-          // RE-FETCH DATA to flip the card to "Attendance Complete" and unlock workout
           fetchDashboard(); 
         } catch (err) {
           alert(`❌ ${err.response?.data?.message || "Invalid QR Code"}`);
-          fetchDashboard(); // Refresh anyway to sync state
+          fetchDashboard(); 
         }
       }, (error) => {
         // quiet error
@@ -82,6 +81,11 @@ const MemberDashboard = () => {
   );
 
   const { member, workout, attendanceStatus, checkInTime } = data;
+
+  // --- NEW LOGIC: Dynamic Status Check ---
+  // Check if the plan is expired based on today's date
+  const isExpired = member.expiryDate && new Date(member.expiryDate).setHours(0, 0, 0, 0) < new Date().setHours(0, 0, 0, 0);
+  const displayStatus = isExpired ? 'expired' : member.membershipStatus;
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-white p-4 md:p-8">
@@ -141,13 +145,28 @@ const MemberDashboard = () => {
                     </div>
                   ) : (
                     <>
-                      <h3 className="text-xl font-black text-white uppercase mb-6 leading-tight italic">Scan Station QR<br/>To Unlock Routine</h3>
-                      <button 
-                        onClick={() => setScanning(true)}
-                        className="w-full bg-white text-blue-600 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:scale-[1.02] active:scale-95 transition-all"
-                      >
-                        Open Camera Scanner
-                      </button>
+                      {/* --- EXPIRED CHECK FOR SCANNER --- */}
+                      {displayStatus === 'expired' ? (
+                        <div className="bg-rose-500/10 border border-rose-500/30 p-6 rounded-2xl text-center backdrop-blur-sm">
+                          <svg className="w-8 h-8 text-rose-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <h3 className="text-sm font-black text-rose-400 uppercase tracking-widest mb-2">Access Denied</h3>
+                          <p className="text-[10px] text-rose-200/70 leading-relaxed italic">
+                            Your subscription has expired. Please renew your plan at the reception to unlock the scanner.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <h3 className="text-xl font-black text-white uppercase mb-6 leading-tight italic">Scan Station QR<br/>To Unlock Routine</h3>
+                          <button 
+                            onClick={() => setScanning(true)}
+                            className="w-full bg-white text-blue-600 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg hover:scale-[1.02] active:scale-95 transition-all"
+                          >
+                            Open Camera Scanner
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                 </>
@@ -160,14 +179,14 @@ const MemberDashboard = () => {
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-[3px] mb-6">Subscription Status</p>
             <div className={`inline-block px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest mb-4 border ${
-              member.membershipStatus === 'active' 
+              displayStatus === 'active' 
               ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
               : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
             }`}>
-              {member.membershipStatus}
+              {displayStatus}
             </div>
             <h3 className="text-2xl font-black uppercase tracking-tight">
-              {member.membershipStatus === 'active' ? 'Full Access' : 'Plan Expired'}
+              {displayStatus === 'active' ? 'Full Access' : 'Plan Expired'}
             </h3>
             <p className="text-slate-400 text-xs mt-2 italic font-medium">
               Valid until: {member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}
@@ -195,17 +214,23 @@ const MemberDashboard = () => {
               </span>
             </div>
 
+            {/* --- LOCKED STATE UI (ALSO CHECKS EXPIRY) --- */}
             {!attendanceStatus ? (
-              /* --- LOCKED STATE UI --- */
               <div className="h-80 flex flex-col items-center justify-center text-center">
-                <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6 border border-white/10">
-                  <svg className="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 border ${
+                  displayStatus === 'expired' ? 'bg-rose-500/5 border-rose-500/10 text-rose-500/50' : 'bg-white/5 border-white/10 text-slate-600'
+                }`}>
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                 </div>
-                <p className="text-xs font-black uppercase tracking-[4px] text-slate-500">Workout Locked</p>
+                <p className="text-xs font-black uppercase tracking-[4px] text-slate-500">
+                  {displayStatus === 'expired' ? 'Account Locked' : 'Workout Locked'}
+                </p>
                 <p className="text-[10px] mt-2 italic text-slate-600 max-w-[200px]">
-                  Please check-in at the gym entrance to view your routine for today.
+                  {displayStatus === 'expired' 
+                    ? 'Please renew your subscription to access your daily workout routine.' 
+                    : 'Please check-in at the gym entrance to view your routine for today.'}
                 </p>
               </div>
             ) : (

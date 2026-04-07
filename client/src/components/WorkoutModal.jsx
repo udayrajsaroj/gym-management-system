@@ -18,7 +18,7 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
     "Plank", "Crunches", "Leg Raises", "Russian Twists"
   ];
 
-  // --- FETCH EXISTING WORKOUT LOGIC ---
+  // --- FETCH & DAILY RESET LOGIC ---
   useEffect(() => {
     const fetchExistingWorkout = async () => {
       if (isOpen && member?._id) {
@@ -32,15 +32,26 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
             headers: { Authorization: `Bearer ${token}` }
           });
 
-          if (data.exercises && data.exercises.length > 0) {
+          // --- DAILY RESET LOGIC ---
+          // 'en-CA' gives YYYY-MM-DD format based on LOCAL time
+          const today = new Date().toLocaleDateString('en-CA'); 
+          const workoutDate = data?.createdAt ? data.createdAt.split('T')[0] : null;
+
+          if (workoutDate === today && data.exercises?.length > 0) {
+            // Agar aaj ka workout hai, toh data load karo
             setExercises(data.exercises);
             setInstructions(data.instructions || "");
           } else {
+            // Agar purana hai ya nahi hai, toh form reset (Daily Reset)
             setExercises([{ name: '', sets: '', reps: '', weight: '' }]);
             setInstructions("");
           }
+
         } catch (err) {
           console.error("Error retrieving member workout history", err);
+          // Error aane par empty form dikhao
+          setExercises([{ name: '', sets: '', reps: '', weight: '' }]);
+          setInstructions("");
         } finally {
           setFetching(false);
         }
@@ -58,7 +69,7 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
 
   const removeRow = (index) => {
     const newRows = exercises.filter((_, i) => i !== index);
-    setExercises(newRows);
+    setExercises(newRows.length > 0 ? newRows : [{ name: '', sets: '', reps: '', weight: '' }]);
   };
 
   const handleInputChange = (index, field, value) => {
@@ -71,7 +82,10 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const token = JSON.parse(localStorage.getItem('profile')).token;
+      const profile = localStorage.getItem('profile');
+      if (!profile) return;
+      const token = JSON.parse(profile).token;
+
       await axios.post(`${import.meta.env.VITE_API_URL}/api/trainer/assign-workout`, {
         memberId: member._id,
         exercises,
@@ -81,13 +95,13 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
       alert(`Workout updated and pushed to ${member.name}`);
       onClose();
     } catch (err) {
+      console.error(err);
       alert("Error saving workout");
     } finally {
       setLoading(false);
     }
   };
 
-  // master grid logic
   const gridLayout = "grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_75px_75px_85px_35px]";
 
   return (
@@ -130,7 +144,6 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
                   key={index} 
                   className={`grid ${gridLayout} gap-3 md:gap-4 bg-white/5 p-4 rounded-2xl border border-white/5 items-center hover:border-blue-500/20 transition-all`}
                 >
-                  {/* SEARCHABLE DROPDOWN INPUT */}
                   <input 
                     required 
                     list="exercise-list"
@@ -162,21 +175,18 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
                   />
                   
                   <div className="flex justify-center">
-                    {exercises.length > 1 && (
-                      <button 
-                        type="button" 
-                        onClick={() => removeRow(index)} 
-                        className="text-rose-500 hover:text-rose-400 transition-colors font-bold text-2xl"
-                      >
-                        &times;
-                      </button>
-                    )}
+                    <button 
+                      type="button" 
+                      onClick={() => removeRow(index)} 
+                      className="text-rose-500 hover:text-rose-400 transition-colors font-bold text-2xl"
+                    >
+                      &times;
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* SHARED DATALIST DROPDOWN OPTIONS */}
             <datalist id="exercise-list">
               {commonExercises.map((option, idx) => (
                 <option key={idx} value={option} />

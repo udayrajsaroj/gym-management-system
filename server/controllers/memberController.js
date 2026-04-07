@@ -7,11 +7,13 @@ exports.getMyDashboard = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 1. Get Member & Workout
+    // 1. Get Member & Trainer details
     const member = await User.findById(req.user.id).populate('assignedTrainer', 'name');
-    const workout = await Workout.findOne({ memberId: req.user.id });
+    
+    // 2. FIX: Hamesha sabse latest (newest) workout fetch karein
+    const workout = await Workout.findOne({ memberId: req.user.id }).sort({ createdAt: -1 });
 
-    // 2. CHECK ATTENDANCE STATUS FOR TODAY
+    // 3. CHECK ATTENDANCE STATUS FOR TODAY
     const attendance = await Attendance.findOne({
       memberId: req.user.id,
       date: { $gte: today }
@@ -25,6 +27,7 @@ exports.getMyDashboard = async (req, res) => {
       checkInTime: attendance ? attendance.checkInTime : null
     });
   } catch (err) {
+    console.error("Dashboard Load Error:", err);
     res.status(500).json({ message: "Error loading dashboard" });
   }
 };
