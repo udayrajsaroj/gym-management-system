@@ -3,20 +3,28 @@ import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import TrainerDashboard from './pages/TrainerDashboard';
 import MemberDashboard from './pages/MemberDashboard';
+import AttendanceReport from './pages/AttendanceReport'; // 1. Naya page import kiya
 
-// --- NEW LOGIC: Auto-Redirect if Already Logged In ---
+// --- AUTO-REDIRECT LOGIC ---
 const PublicRoute = ({ children }) => {
   const profileInfo = localStorage.getItem('profile');
-  
-  // Agar profile localStorage mein hai, toh user ko uske role ke hisaab se redirect kar do
   if (profileInfo) {
     const { user } = JSON.parse(profileInfo);
     if (user.role === 'admin') return <Navigate to="/admin-dashboard" replace />;
     if (user.role === 'trainer') return <Navigate to="/trainer-dashboard" replace />;
     return <Navigate to="/member-dashboard" replace />;
   }
+  return children;
+};
+
+// --- PRIVATE ROUTE PROTECTOR (Optional but recommended) ---
+const ProtectedRoute = ({ children, allowedRole }) => {
+  const profileInfo = localStorage.getItem('profile');
+  if (!profileInfo) return <Navigate to="/" replace />;
   
-  // Agar logged in nahi hai, toh Login page (children) dikhao
+  const { user } = JSON.parse(profileInfo);
+  if (allowedRole && user.role !== allowedRole) return <Navigate to="/" replace />;
+  
   return children;
 };
 
@@ -24,7 +32,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Login page ko PublicRoute ke andar wrap kar diya */}
+        {/* Public Route */}
         <Route 
           path="/" 
           element={
@@ -34,11 +42,16 @@ function App() {
           } 
         />
         
+        {/* Admin Routes */}
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
+        {/* 2. Naya Attendance Report Route */}
+        <Route path="/admin/attendance" element={<AttendanceReport />} />
+        
+        {/* Other Dashboards */}
         <Route path="/trainer-dashboard" element={<TrainerDashboard />} />
         <Route path="/member-dashboard" element={<MemberDashboard />} />
         
-        {/* If someone types a wrong URL, go to Login */}
+        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>

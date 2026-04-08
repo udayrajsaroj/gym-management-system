@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Attendance = require('../models/Attendance'); // Ensure this is imported
 const bcrypt = require('bcryptjs');
 
 /**
@@ -20,7 +21,6 @@ exports.getAllUsers = async (req, res) => {
  */
 exports.addUser = async (req, res) => {
   try {
-    // 1. Destructure assignedTrainer from req.body
     const { name, email, password, role, expiryDate, assignedTrainer } = req.body;
 
     const userExists = await User.findOne({ email });
@@ -29,7 +29,6 @@ exports.addUser = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Default status logic for new users
     let status = 'active';
     if (role === 'member' && expiryDate) {
       const today = new Date();
@@ -44,7 +43,6 @@ exports.addUser = async (req, res) => {
       role,
       membershipStatus: role === 'member' ? status : 'none',
       expiryDate: role === 'member' ? expiryDate : null,
-      // 2. Save the trainer ID for members
       assignedTrainer: role === 'member' ? assignedTrainer : null 
     });
 
@@ -61,13 +59,9 @@ exports.addUser = async (req, res) => {
  */
 exports.updateUser = async (req, res) => {
   try {
-    // 1. Destructure assignedTrainer here
     const { name, email, role, expiryDate, membershipStatus, password, assignedTrainer } = req.body;
-    
-    // 2. Include assignedTrainer in the updateData object
     let updateData = { name, email, role, expiryDate, membershipStatus, assignedTrainer };
 
-    // --- SMART STATUS LOGIC ---
     if (role === 'member' && expiryDate) {
       const selectedDate = new Date(expiryDate);
       const today = new Date();
@@ -80,7 +74,6 @@ exports.updateUser = async (req, res) => {
       }
     }
 
-    // Handle Password Update
     if (password && password.trim() !== "") {
       const salt = await bcrypt.genSalt(10);
       updateData.password = await bcrypt.hash(password, salt);
@@ -135,5 +128,58 @@ exports.getExpiringMembers = async (req, res) => {
     res.json(alerts);
   } catch (err) {
     res.status(500).json({ message: "Error fetching membership alerts" });
+  }
+};
+
+// --- NEW ATTENDANCE ANALYTICS FUNCTIONS ---
+
+/**
+ * @desc    Get overall attendance logs for Admin
+ * @route   GET /api/admin/attendance-report
+ */
+exports.getAttendanceReport = async (req, res) => {
+  try {
+    const logs = await Attendance.find()
+      .populate('memberId', 'name email')
+      .sort({ date: -1 });
+    res.json(logs);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch attendance report" });
+  }
+};
+
+/**
+ * @desc    Get Present/Absent stats for a specific member
+ * @route   GET /api/admin/member-stats/:id
+ */
+exports.getMemberStats = async (req, res) => {
+  try {
+    const memberId = req.params.id;
+    const member = await User.findById(memberId);
+    
+    if (!member) return res.status(404).json({ message: "Member not found" });
+
+    // 1. Aaj tak kitni baar present tha
+    const totalPresent = await Attendance.countDocuments({ memberId });
+
+    // 2. Joining se lekar aaj tak total kitne din hue
+    const joinDate = new Date(member.createdAt);
+    const today = new Date();
+    const diffTime = Math.abs(today - joinDate);
+    const totalDaysSinceJoined = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+
+    // 3. Absent calculate karo
+    const totalAbsent = totalDaysSinceJoined - totalPresent;
+    const attendancePercentage = ((totalPresent / totalDaysSinceJoined) * 100).toFixed(1);
+
+    res.json({
+      name: member.name,
+      totalPresent,
+      totalAbsent: totalAbsent < 0 ? 0 : totalAbsent,
+      totalDaysSinceJoined,
+      attendancePercentage: attendancePercentage > 100 ? 100 : attendancePercentage
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Error calculating member stats" });
   }
 };

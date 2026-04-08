@@ -8,7 +8,7 @@ const MemberDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   
-  // --- NEW: STATE FOR CHECKBOXES ---
+  // --- STATE FOR CHECKBOXES ---
   const [completedExercises, setCompletedExercises] = useState([]);
   
   const scannerRef = useRef(null); 
@@ -26,19 +26,39 @@ const MemberDashboard = () => {
       const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/member/dashboard`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
       setData(res.data);
+
+      // --- FIX: LOAD SAVED TICKS FROM DATABASE ---
+      const fetchedWorkout = res.data.workout;
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      const workoutDateStr = fetchedWorkout?.createdAt ? fetchedWorkout.createdAt.split('T')[0] : null;
+
+      // Agar workout aaj ka hai, toh database se saved completed array uthao
+      if (workoutDateStr === todayStr && fetchedWorkout?.completedExercises) {
+        setCompletedExercises(fetchedWorkout.completedExercises);
+      } else {
+        setCompletedExercises([]); // Purana workout hai ya naya din hai toh reset state
+      }
+
     } catch (err) { 
       console.error("Dashboard Load Error:", err);
-      navigate('/'); 
+      // Agar token invalid hai toh hi logout karein
+      if (err.response?.status === 401) {
+        localStorage.clear();
+        navigate('/');
+      }
     } finally { 
-      setLoading(false); 
+      setLoading(false); // Stop loading screen
     }
   };
 
   useEffect(() => {
     fetchDashboard();
-  }, [navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount to avoid loops
 
+  // QR Scanner Logic
   useEffect(() => {
     if (scanning) {
       const html5QrCode = new Html5Qrcode("qr-reader");
@@ -59,7 +79,7 @@ const MemberDashboard = () => {
             );
             
             alert(`✅ ${scanRes.message}`);
-            fetchDashboard(); 
+            fetchDashboard(); // Refresh data to unlock workout
           } catch (err) {
             alert(`❌ ${err.response?.data?.message || "Invalid QR Code"}`);
             fetchDashboard(); 
@@ -67,7 +87,7 @@ const MemberDashboard = () => {
         },
         (errorMessage) => {}
       ).catch((err) => {
-        alert("Camera access denied or no back camera found. Please check browser permissions.");
+        alert("Camera access denied or no back camera found.");
         setScanning(false);
       });
 
@@ -87,13 +107,29 @@ const MemberDashboard = () => {
     }
   };
 
-  // --- NEW: TOGGLE CHECKBOX LOGIC ---
-  const toggleExercise = (index) => {
-    setCompletedExercises(prev => 
-      prev.includes(index) 
-        ? prev.filter(i => i !== index) // Agar pehle se tick hai, toh hatao
-        : [...prev, index]              // Agar tick nahi hai, toh add karo
-    );
+  // --- FIX: TOGGLE & PERSIST PROGRESS TO BACKEND ---
+  const toggleExercise = async (index) => {
+    const newCompletedList = completedExercises.includes(index) 
+      ? completedExercises.filter(i => i !== index)
+      : [...completedExercises, index];
+    
+    // 1. UI ko turant update karo (Fast feel)
+    setCompletedExercises(newCompletedList);
+
+    // 2. Database mein chupchap update bhejo
+    if (data?.workout?._id) {
+      try {
+        const token = JSON.parse(localStorage.getItem('profile')).token;
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/member/update-progress`, {
+          workoutId: data.workout._id,
+          completedExercises: newCompletedList
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (err) {
+        console.error("Failed to sync progress with database", err);
+      }
+    }
   };
 
   if (loading) return (
@@ -114,7 +150,6 @@ const MemberDashboard = () => {
   const workoutDate = workout?.createdAt ? workout.createdAt.split('T')[0] : null;
   const isWorkoutValidForToday = workoutDate === today && workout?.exercises?.length > 0;
 
-  // --- NEW: CALCULATE PROGRESS ---
   const totalExercises = isWorkoutValidForToday ? workout.exercises.length : 0;
   const progressPercent = totalExercises > 0 ? Math.round((completedExercises.length / totalExercises) * 100) : 0;
 
@@ -178,9 +213,7 @@ const MemberDashboard = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                           </svg>
                           <h3 className="text-sm font-black text-rose-400 uppercase tracking-widest mb-2">Access Denied</h3>
-                          <p className="text-[10px] text-rose-200/70 leading-relaxed italic">
-                            Your subscription has expired. Please renew your plan at the reception to unlock the scanner.
-                          </p>
+                          <p className="text-[10px] text-rose-200/70 leading-relaxed italic">Your subscription has expired.</p>
                         </div>
                       ) : (
                         <>
@@ -195,29 +228,14 @@ const MemberDashboard = () => {
                 </>
               )}
             </div>
-            <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
           </div>
 
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden group">
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-[3px] mb-6">Subscription Status</p>
-            <div className={`inline-block px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest mb-4 border ${
-              displayStatus === 'active' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-            }`}>
+            <div className={`inline-block px-6 py-2 rounded-full text-[10px] font-black uppercase border ${displayStatus === 'active' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border-rose-500/20'}`}>
               {displayStatus}
             </div>
-            <h3 className="text-2xl font-black uppercase tracking-tight">
-              {displayStatus === 'active' ? 'Full Access' : 'Plan Expired'}
-            </h3>
-            <p className="text-slate-400 text-xs mt-2 italic font-medium">
-              Valid until: {member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}
-            </p>
-          </div>
-
-          <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] shadow-xl group">
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[3px] mb-4">Assigned Coach</p>
-            <h3 className="text-2xl font-black text-blue-500 italic uppercase tracking-tighter">
-              {member.assignedTrainer?.name || "Assigning Soon..."}
-            </h3>
+            <h3 className="text-2xl font-black uppercase tracking-tight">{displayStatus === 'active' ? 'Full Access' : 'Plan Expired'}</h3>
           </div>
         </div>
 
@@ -225,7 +243,6 @@ const MemberDashboard = () => {
         <div className="lg:col-span-2">
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] h-full shadow-2xl">
             
-            {/* Header + Date */}
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-xl font-black uppercase italic tracking-tight">
                 Today's <span className="text-blue-500">Routine</span>
@@ -236,119 +253,54 @@ const MemberDashboard = () => {
             </div>
 
             {!attendanceStatus ? (
-              <div className="h-80 flex flex-col items-center justify-center text-center">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 border ${
-                  displayStatus === 'expired' ? 'bg-rose-500/5 border-rose-500/10 text-rose-500/50' : 'bg-white/5 border-white/10 text-slate-600'
-                }`}>
-                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <p className="text-xs font-black uppercase tracking-[4px] text-slate-500">
-                  {displayStatus === 'expired' ? 'Account Locked' : 'Workout Locked'}
-                </p>
-                <p className="text-[10px] mt-2 italic text-slate-600 max-w-[200px]">
-                  {displayStatus === 'expired' 
-                    ? 'Please renew your subscription to access your daily workout routine.' 
-                    : 'Please check-in at the gym entrance to view your routine for today.'}
-                </p>
+              <div className="h-80 flex flex-col items-center justify-center text-center opacity-40">
+                 <p className="text-xs font-black uppercase tracking-[4px]">Workout Locked</p>
+                 <p className="text-[10px] mt-2 italic text-slate-500">Please scan QR to view routine</p>
               </div>
             ) : (
               isWorkoutValidForToday ? (
                 <div className="space-y-4">
                   
-                  {/* --- NEW: PROGRESS BAR UI --- */}
+                  {/* PROGRESS BAR UI */}
                   <div className="mb-6 bg-[#0f172a] p-4 rounded-2xl border border-white/5">
                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-3">
                       <span className="text-slate-500">Workout Progress</span>
-                      <span className={progressPercent === 100 ? "text-emerald-400" : "text-blue-500"}>
-                        {progressPercent}% Complete
-                      </span>
+                      <span className={progressPercent === 100 ? "text-emerald-400" : "text-blue-500"}>{progressPercent}% Complete</span>
                     </div>
                     <div className="w-full bg-white/5 h-2.5 rounded-full overflow-hidden">
-                      <div 
-                        className={`h-full transition-all duration-700 ease-out ${progressPercent === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} 
-                        style={{ width: `${progressPercent}%` }}
-                      ></div>
+                      <div className={`h-full transition-all duration-700 ease-out ${progressPercent === 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${progressPercent}%` }}></div>
                     </div>
                   </div>
 
                   {/* EXERCISE LIST */}
                   {workout.exercises.map((ex, i) => {
-                    const isDone = completedExercises.includes(i); // Check if this exercise is ticked
+                    const isDone = completedExercises.includes(i); 
 
                     return (
                       <div 
                         key={i} 
-                        className={`flex items-center justify-between p-5 md:p-6 rounded-3xl border transition-all duration-300 cursor-pointer group ${
-                          isDone 
-                            ? 'bg-emerald-500/5 border-emerald-500/20 opacity-70' 
-                            : 'bg-white/[0.03] border-white/5 hover:border-blue-500/30'
-                        }`}
-                        onClick={() => toggleExercise(i)} // Pura card click karne pe bhi tick hoga
+                        className={`flex items-center justify-between p-5 md:p-6 rounded-3xl border transition-all duration-300 cursor-pointer group ${isDone ? 'bg-emerald-500/5 border-emerald-500/20 opacity-70' : 'bg-white/[0.03] border-white/5 hover:border-blue-500/30'}`}
+                        onClick={() => toggleExercise(i)} 
                       >
                         <div className="flex items-center gap-4 md:gap-6">
-                          
-                          {/* --- CHECKBOX --- */}
-                          <div className={`flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-                            isDone 
-                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' 
-                              : 'border-slate-600 text-transparent group-hover:border-blue-500/50'
-                          }`}>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
-                            </svg>
+                          <div className={`flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${isDone ? 'bg-emerald-500 border-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'border-slate-600 text-transparent'}`}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
                           </div>
 
-                          {/* Exercise Details */}
                           <div>
-                            <h4 className={`font-black uppercase tracking-tight transition-all duration-300 ${
-                              isDone ? 'text-emerald-400 line-through decoration-emerald-500/50' : 'text-white group-hover:text-blue-400'
-                            }`}>
-                              {ex.name}
-                            </h4>
-                            <p className={`text-[10px] font-black uppercase mt-1 tracking-widest ${isDone ? 'text-emerald-500/50' : 'text-slate-500'}`}>
-                              {ex.sets} Sets <span className="text-slate-700 mx-1">×</span> {ex.reps} Reps
-                            </p>
+                            <h4 className={`font-black uppercase tracking-tight transition-all duration-300 ${isDone ? 'text-emerald-400 line-through' : 'text-white group-hover:text-blue-400'}`}>{ex.name}</h4>
+                            <p className={`text-[10px] font-black uppercase mt-1 tracking-widest ${isDone ? 'text-emerald-500/50' : 'text-slate-500'}`}>{ex.sets} Sets × {ex.reps} Reps</p>
                           </div>
                         </div>
-                        
-                        <div className="flex flex-col items-end">
-                          <span className={`text-[8px] font-black uppercase tracking-widest mb-1 ${isDone ? 'text-emerald-500/50' : 'text-slate-600'}`}>
-                            Weight
-                          </span>
-                          <div className={`px-4 py-2 rounded-xl border transition-all ${
-                            isDone ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-blue-500/10 border-blue-500/20'
-                          }`}>
-                            <span className={`font-black text-xs md:text-sm ${isDone ? 'text-emerald-400' : 'text-blue-400'}`}>
-                              {ex.weight.toLowerCase().includes('kg') || ex.weight.toLowerCase().includes('lb') 
-                                ? ex.weight 
-                                : `${ex.weight} kg`}
-                            </span>
-                          </div>
+                        <div className={`px-4 py-2 rounded-xl border transition-all ${isDone ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-blue-500/10 border-blue-500/20'}`}>
+                           <span className={`font-black text-xs md:text-sm ${isDone ? 'text-emerald-400' : 'text-blue-400'}`}>{ex.weight.toLowerCase().includes('kg') ? ex.weight : `${ex.weight} kg`}</span>
                         </div>
                       </div>
                     );
                   })}
-                  
-                  {workout.instructions && (
-                    <div className="mt-10 p-6 bg-amber-500/5 border border-amber-500/10 rounded-[2rem] relative">
-                      <div className="absolute -top-3 left-6 bg-[#0f172a] px-3">
-                         <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Coach's Note</p>
-                      </div>
-                      <p className="text-slate-400 text-sm italic leading-relaxed">
-                        "{workout.instructions}"
-                      </p>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="h-80 flex flex-col items-center justify-center text-center opacity-20">
-                  <div className="p-6 border-2 border-dashed border-slate-500 rounded-full mb-4">
-                    <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
                   <p className="text-xs font-black uppercase tracking-[4px]">Rest & Recover</p>
                   <p className="text-[10px] mt-2 italic font-medium">No routine assigned for today.</p>
                 </div>
