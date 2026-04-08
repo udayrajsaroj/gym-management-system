@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const Attendance = require('../models/Attendance'); // 👈 Import check karein
+const Attendance = require('../models/Attendance');
 const bcrypt = require('bcryptjs');
 
 /**
@@ -9,7 +9,7 @@ const bcrypt = require('bcryptjs');
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select('-password').sort({ createdAt: -1 });
-    res.json(users);
+    res.status(200).json(users);
   } catch (err) {
     res.status(500).json({ message: "Server Error: Could not fetch users" });
   }
@@ -67,11 +67,7 @@ exports.updateUser = async (req, res) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0); 
 
-      if (selectedDate >= today) {
-        updateData.membershipStatus = 'active';
-      } else {
-        updateData.membershipStatus = 'expired';
-      }
+      updateData.membershipStatus = selectedDate >= today ? 'active' : 'expired';
     }
 
     if (password && password.trim() !== "") {
@@ -89,7 +85,6 @@ exports.updateUser = async (req, res) => {
 
     res.json({ message: "Update successful", user: updatedUser });
   } catch (err) {
-    console.error("Update Error:", err);
     res.status(500).json({ message: "Error updating user information" });
   }
 };
@@ -139,12 +134,21 @@ exports.getExpiringMembers = async (req, res) => {
  */
 exports.getAttendanceReport = async (req, res) => {
   try {
+    // Populate ke saath null check handle karne ke liye lean query
     const logs = await Attendance.find()
       .populate('memberId', 'name email')
-      .sort({ date: -1 });
-    res.json(logs);
+      .sort({ date: -1 })
+      .lean();
+
+    // Agar logs nahi hain toh empty array bhejein 404 nahi
+    const safeLogs = logs.map(log => ({
+      ...log,
+      memberId: log.memberId || { name: "Unknown User", email: "N/A" }
+    }));
+
+    res.status(200).json(safeLogs);
   } catch (error) {
-    console.error("Report Error:", error);
+    console.error("Report Fetch Error:", error);
     res.status(500).json({ message: "Failed to fetch attendance report" });
   }
 };
@@ -158,22 +162,24 @@ exports.getMemberStats = async (req, res) => {
     const memberId = req.params.id;
     const member = await User.findById(memberId);
     
-    if (!member) return res.status(404).json({ message: "Member not found" });
+    if (!member) return res.status(404).json({ message: "Member not found in database" });
 
-    // 1. Aaj tak kitni baar present tha
+    // 1. Total Present count
     const totalPresent = await Attendance.countDocuments({ memberId });
 
-    // 2. Joining date se aaj tak ke total din
+    // 2. Joining date calculation
     const joinDate = new Date(member.createdAt);
     const today = new Date();
+    
+    // Difference in days
     const diffTime = Math.abs(today - joinDate);
     const totalDaysSinceJoined = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
 
-    // 3. Calculation
+    // 3. Stats logic
     const totalAbsent = totalDaysSinceJoined - totalPresent;
     const attendancePercentage = ((totalPresent / totalDaysSinceJoined) * 100).toFixed(1);
 
-    res.json({
+    res.status(200).json({
       name: member.name,
       totalPresent,
       totalAbsent: totalAbsent < 0 ? 0 : totalAbsent,
@@ -181,7 +187,7 @@ exports.getMemberStats = async (req, res) => {
       attendancePercentage: attendancePercentage > 100 ? 100 : attendancePercentage
     });
   } catch (err) {
-    console.error("Stats Error:", err);
-    res.status(500).json({ message: "Error calculating member stats" });
+    console.error("Member Stats Error:", err);
+    res.status(500).json({ message: "Backend error calculating statistics" });
   }
 };
