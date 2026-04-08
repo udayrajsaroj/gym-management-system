@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const Attendance = require('../models/Attendance'); // Ensure this is imported
+const Attendance = require('../models/Attendance'); // 👈 Import check karein
 const bcrypt = require('bcryptjs');
 
 /**
@@ -131,7 +131,7 @@ exports.getExpiringMembers = async (req, res) => {
   }
 };
 
-// --- NEW ATTENDANCE ANALYTICS FUNCTIONS ---
+// --- ATTENDANCE ANALYTICS FUNCTIONS ---
 
 /**
  * @desc    Get overall attendance logs for Admin
@@ -144,6 +144,7 @@ exports.getAttendanceReport = async (req, res) => {
       .sort({ date: -1 });
     res.json(logs);
   } catch (error) {
+    console.error("Report Error:", error);
     res.status(500).json({ message: "Failed to fetch attendance report" });
   }
 };
@@ -162,13 +163,13 @@ exports.getMemberStats = async (req, res) => {
     // 1. Aaj tak kitni baar present tha
     const totalPresent = await Attendance.countDocuments({ memberId });
 
-    // 2. Joining se lekar aaj tak total kitne din hue
+    // 2. Joining date se aaj tak ke total din
     const joinDate = new Date(member.createdAt);
     const today = new Date();
     const diffTime = Math.abs(today - joinDate);
     const totalDaysSinceJoined = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
 
-    // 3. Absent calculate karo
+    // 3. Calculation
     const totalAbsent = totalDaysSinceJoined - totalPresent;
     const attendancePercentage = ((totalPresent / totalDaysSinceJoined) * 100).toFixed(1);
 
@@ -180,6 +181,7 @@ exports.getMemberStats = async (req, res) => {
       attendancePercentage: attendancePercentage > 100 ? 100 : attendancePercentage
     });
   } catch (err) {
+    console.error("Stats Error:", err);
     res.status(500).json({ message: "Error calculating member stats" });
   }
 };
