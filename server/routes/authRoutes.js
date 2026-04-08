@@ -1,12 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { sendOTP, verifyAndRegister, login } = require('../controllers/authController');
 
-// Naye OTP wale routes
-router.post('/send-otp', sendOTP);
-router.post('/verify-and-register', verifyAndRegister);
+// Sirf 'login' ko import karein, baaki sab hata dein
+const { login } = require('../controllers/authController');
 
-// Purana Login route
+// Login route
 router.post('/login', login);
 
 module.exports = router;
