@@ -4,8 +4,8 @@ import axios from 'axios';
 const WorkoutModal = ({ isOpen, onClose, member }) => {
   const [exercises, setExercises] = useState([{ name: '', sets: '', reps: '', weight: '' }]);
   const [instructions, setInstructions] = useState('');
-  const [loading, setLoading] = useState(false); // For "Pushing" workout
-  const [fetching, setFetching] = useState(false); // For "Loading" existing workout
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
   // --- PRE-DEFINED EXERCISE LIST ---
   const commonExercises = [
@@ -32,24 +32,24 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
             headers: { Authorization: `Bearer ${token}` }
           });
 
-          // --- DAILY RESET LOGIC ---
-          // 'en-CA' gives YYYY-MM-DD format based on LOCAL time
+          // --- DAILY RESET LOGIC (AUTO-EXPIRY) ---
+          // Aaj ki date nikal rahe hain
           const today = new Date().toLocaleDateString('en-CA'); 
+          // Workout kab assign hua tha uski date
           const workoutDate = data?.createdAt ? data.createdAt.split('T')[0] : null;
 
           if (workoutDate === today && data.exercises?.length > 0) {
-            // Agar aaj ka workout hai, toh data load karo
+            // Agar assigned workout AAJ ka hi hai, toh form mein load kar do
             setExercises(data.exercises);
             setInstructions(data.instructions || "");
           } else {
-            // Agar purana hai ya nahi hai, toh form reset (Daily Reset)
+            // Agar workout kal ka hai (ya purana hai), toh automatic RESET kar do
             setExercises([{ name: '', sets: '', reps: '', weight: '' }]);
             setInstructions("");
           }
 
         } catch (err) {
           console.error("Error retrieving member workout history", err);
-          // Error aane par empty form dikhao
           setExercises([{ name: '', sets: '', reps: '', weight: '' }]);
           setInstructions("");
         } finally {
@@ -102,8 +102,6 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
     }
   };
 
-  const gridLayout = "grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_75px_75px_85px_35px]";
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 text-white">
       <div className="bg-[#1e293b] w-full max-w-3xl rounded-[2.5rem] border border-white/10 p-6 md:p-10 shadow-2xl max-h-[95vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
@@ -118,7 +116,7 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
               Athlete: {member?.name}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors text-2xl">&times;</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors text-3xl leading-none">&times;</button>
         </div>
 
         {fetching ? (
@@ -128,8 +126,9 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="w-full">
-            {/* Table Labels */}
-            <div className={`hidden md:grid ${gridLayout} gap-4 px-4 mb-3 text-[10px] font-black text-slate-500 uppercase tracking-widest`}>
+            
+            {/* Desktop Table Labels (Hidden on Mobile) */}
+            <div className="hidden md:grid grid-cols-[minmax(0,1.5fr)_75px_75px_85px_35px] gap-4 px-4 mb-3 text-[10px] font-black text-slate-500 uppercase tracking-widest">
               <span>Exercise</span>
               <span className="text-center">Sets</span>
               <span className="text-center">Reps</span>
@@ -138,43 +137,64 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
             </div>
 
             {/* Exercise Rows */}
-            <div className="space-y-3 mb-6">
+            <div className="space-y-4 mb-6">
               {exercises.map((ex, index) => (
                 <div 
                   key={index} 
-                  className={`grid ${gridLayout} gap-3 md:gap-4 bg-white/5 p-4 rounded-2xl border border-white/5 items-center hover:border-blue-500/20 transition-all`}
+                  className="bg-white/5 p-4 md:p-3 rounded-2xl border border-white/5 hover:border-blue-500/30 transition-all flex flex-col md:grid md:grid-cols-[minmax(0,1.5fr)_75px_75px_85px_35px] gap-3 md:gap-4 md:items-center relative"
                 >
-                  <input 
-                    required 
-                    list="exercise-list"
-                    placeholder="Search or type exercise..." 
-                    className="bg-slate-800 p-3 rounded-xl text-xs outline-none border border-slate-700 text-white focus:border-blue-500 transition-all min-w-0" 
-                    value={ex.name} 
-                    onChange={(e) => handleInputChange(index, 'name', e.target.value)} 
-                  />
                   
-                  <input 
-                    placeholder="0" 
-                    className="bg-slate-800 p-3 rounded-xl text-xs outline-none border border-slate-700 text-white text-center focus:border-blue-500 transition-all min-w-0" 
-                    value={ex.sets} 
-                    onChange={(e) => handleInputChange(index, 'sets', e.target.value)} 
-                  />
-                  
-                  <input 
-                    placeholder="0" 
-                    className="bg-slate-800 p-3 rounded-xl text-xs outline-none border border-slate-700 text-white text-center focus:border-blue-500 transition-all min-w-0" 
-                    value={ex.reps} 
-                    onChange={(e) => handleInputChange(index, 'reps', e.target.value)} 
-                  />
+                  {/* Mobile Header: Exercise Number & Delete Button */}
+                  <div className="flex justify-between items-center md:hidden mb-2">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Exercise {index + 1}</span>
+                    <button type="button" onClick={() => removeRow(index)} className="text-rose-500 font-bold text-2xl leading-none">&times;</button>
+                  </div>
 
-                  <input 
-                    placeholder="Kg" 
-                    className="bg-slate-800 p-3 rounded-xl text-xs outline-none border border-slate-700 text-white text-center focus:border-blue-500 transition-all min-w-0" 
-                    value={ex.weight} 
-                    onChange={(e) => handleInputChange(index, 'weight', e.target.value)} 
-                  />
-                  
-                  <div className="flex justify-center">
+                  {/* 1. Exercise Name Input */}
+                  <div className="w-full">
+                    <input 
+                      required 
+                      list="exercise-list"
+                      placeholder="Search or type exercise..." 
+                      className="w-full bg-slate-800 p-3 md:p-3 rounded-xl text-xs outline-none border border-slate-700 text-white focus:border-blue-500 transition-all" 
+                      value={ex.name} 
+                      onChange={(e) => handleInputChange(index, 'name', e.target.value)} 
+                    />
+                  </div>
+
+                  {/* 2. Mobile Grid for Sets, Reps, Weight (Side-by-Side) */}
+                  <div className="grid grid-cols-3 gap-3 md:contents">
+                    <div>
+                      <label className="text-[9px] text-slate-500 font-bold uppercase md:hidden block mb-1 text-center tracking-widest">Sets</label>
+                      <input 
+                        placeholder="0" 
+                        className="w-full bg-slate-800 p-3 rounded-xl text-xs outline-none border border-slate-700 text-white text-center focus:border-blue-500 transition-all" 
+                        value={ex.sets} 
+                        onChange={(e) => handleInputChange(index, 'sets', e.target.value)} 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-500 font-bold uppercase md:hidden block mb-1 text-center tracking-widest">Reps</label>
+                      <input 
+                        placeholder="0" 
+                        className="w-full bg-slate-800 p-3 rounded-xl text-xs outline-none border border-slate-700 text-white text-center focus:border-blue-500 transition-all" 
+                        value={ex.reps} 
+                        onChange={(e) => handleInputChange(index, 'reps', e.target.value)} 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-500 font-bold uppercase md:hidden block mb-1 text-center tracking-widest">Weight</label>
+                      <input 
+                        placeholder="Kg/Lb" 
+                        className="w-full bg-slate-800 p-3 rounded-xl text-xs outline-none border border-slate-700 text-white text-center focus:border-blue-500 transition-all" 
+                        value={ex.weight} 
+                        onChange={(e) => handleInputChange(index, 'weight', e.target.value)} 
+                      />
+                    </div>
+                  </div>
+
+                  {/* 3. Desktop Delete Button */}
+                  <div className="hidden md:flex justify-center">
                     <button 
                       type="button" 
                       onClick={() => removeRow(index)} 
@@ -183,6 +203,7 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
                       &times;
                     </button>
                   </div>
+
                 </div>
               ))}
             </div>
@@ -196,7 +217,7 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
             <button 
               type="button" 
               onClick={addExerciseRow} 
-              className="w-full border-2 border-dashed border-white/5 text-slate-500 py-4 rounded-2xl mb-8 text-[10px] font-black uppercase tracking-[2px] hover:bg-white/5 hover:text-white hover:border-blue-500/50 transition-all"
+              className="w-full border-2 border-dashed border-white/5 text-slate-400 py-4 rounded-2xl mb-8 text-[10px] font-black uppercase tracking-[2px] hover:bg-white/5 hover:text-white hover:border-blue-500/50 transition-all"
             >
               + Add Exercise Row
             </button>
@@ -204,7 +225,7 @@ const WorkoutModal = ({ isOpen, onClose, member }) => {
             <div className="mb-8">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 block mb-2">Instructions / Coaching Notes</label>
               <textarea 
-                placeholder="Focus on slow eccentric movements..." 
+                placeholder="E.g., Focus on slow eccentric movements, take 1 min rest between sets..." 
                 className="w-full bg-slate-800 p-5 rounded-2xl text-xs outline-none border border-slate-700 text-white h-28 focus:border-blue-500 transition-all resize-none placeholder:text-slate-600"
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)} 

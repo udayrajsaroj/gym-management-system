@@ -12,6 +12,8 @@ const WorkoutSchema = new mongoose.Schema({
     }
   ],
   instructions: { type: String }, // General notes like "Keep rest to 60s"
+  completedExercises: { type: [Number], default: [] }, 
+  
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
