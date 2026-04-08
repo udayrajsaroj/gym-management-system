@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+// Scanner library imported directly, not the GUI version
+import { Html5Qrcode } from 'html5-qrcode'; 
 
 const MemberDashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  
+  // To keep track of the scanner instance so we can stop it on unmount
+  const scannerRef = useRef(null); 
   const navigate = useNavigate();
 
   // 1. Fetch Dashboard Data
@@ -35,41 +39,81 @@ const MemberDashboard = () => {
     fetchDashboard();
   }, [navigate]);
 
-  // 2. QR Scanner Logic
+  // 2. Custom QR Scanner Logic (Forcing Back Camera)
   useEffect(() => {
     if (scanning) {
-      const scanner = new Html5QrcodeScanner("qr-reader", { 
-        fps: 10, 
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0
-      });
-      
-      scanner.render(async (decodedText) => {
-        setScanning(false);
-        scanner.clear(); 
-        
-        try {
-          const token = JSON.parse(localStorage.getItem('profile')).token;
-          const { data: scanRes } = await axios.post(`${import.meta.env.VITE_API_URL}/api/attendance/verify-scan`, 
-            { scannedToken: decodedText },
-            { headers: { Authorization: `Bearer ${token}` }}
-          );
+      // Initialize the scanner
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      scannerRef.current = html5QrCode;
+
+      // Start the scanner targeting the back camera
+      html5QrCode.start(
+        { facingMode: "environment" }, // Forces the back camera
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 }
+        },
+        async (decodedText) => {
+          // onSuccess Callback
+          setScanning(false);
           
-          alert(`✅ ${scanRes.message}`);
-          fetchDashboard(); 
-        } catch (err) {
-          alert(`❌ ${err.response?.data?.message || "Invalid QR Code"}`);
-          fetchDashboard(); 
+          try {
+            await html5QrCode.stop(); // Stop camera instantly after read
+          } catch (stopErr) {
+            console.error("Error stopping scanner after read", stopErr);
+          }
+
+          try {
+            const token = JSON.parse(localStorage.getItem('profile')).token;
+            const { data: scanRes } = await axios.post(`${import.meta.env.VITE_API_URL}/api/attendance/verify-scan`, 
+              { scannedToken: decodedText },
+              { headers: { Authorization: `Bearer ${token}` }}
+            );
+            
+            alert(`✅ ${scanRes.message}`);
+            fetchDashboard(); 
+          } catch (err) {
+            alert(`❌ ${err.response?.data?.message || "Invalid QR Code"}`);
+            fetchDashboard(); 
+          }
+        },
+        (errorMessage) => {
+          // Quietly handle parse errors (happens constantly while waiting for a good scan)
         }
-      }, (error) => {
-        // quiet error
+      ).catch((err) => {
+        console.error("Error starting scanner", err);
+        alert("Camera access denied or no back camera found. Please check browser permissions.");
+        setScanning(false);
       });
 
+      // Cleanup function: If component unmounts or scanning stops, clear the camera
       return () => {
-        scanner.clear().catch(err => console.error("Scanner cleanup error", err));
+        if (scannerRef.current && scannerRef.current.isScanning) {
+          scannerRef.current.stop().then(() => {
+            scannerRef.current.clear();
+          }).catch((err) => {
+            console.error("Cleanup error", err);
+          });
+        }
       };
     }
   }, [scanning]);
+
+
+  // Helper function to manually stop scan
+  const handleStopScan = () => {
+    if (scannerRef.current && scannerRef.current.isScanning) {
+      scannerRef.current.stop().then(() => {
+        setScanning(false);
+      }).catch(err => {
+        console.error("Failed to stop scanner", err);
+        setScanning(false); // Force close UI anyway
+      });
+    } else {
+      setScanning(false);
+    }
+  };
+
 
   if (loading) return (
     <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
@@ -82,8 +126,6 @@ const MemberDashboard = () => {
 
   const { member, workout, attendanceStatus, checkInTime } = data;
 
-  // --- NEW LOGIC: Dynamic Status Check ---
-  // Check if the plan is expired based on today's date
   const isExpired = member.expiryDate && new Date(member.expiryDate).setHours(0, 0, 0, 0) < new Date().setHours(0, 0, 0, 0);
   const displayStatus = isExpired ? 'expired' : member.membershipStatus;
 
@@ -135,10 +177,12 @@ const MemberDashboard = () => {
                 <>
                   {scanning ? (
                     <div className="overflow-hidden rounded-2xl border-4 border-white/20 bg-black">
+                      {/* The div where the scanner renders */}
                       <div id="qr-reader" className="w-full"></div>
+                      
                       <button 
-                        onClick={() => setScanning(false)}
-                        className="w-full bg-rose-500 text-white py-2 text-[8px] font-black uppercase"
+                        onClick={handleStopScan}
+                        className="w-full bg-rose-500 text-white py-4 text-[10px] font-black uppercase tracking-widest hover:bg-rose-600 transition-colors"
                       >
                         Cancel Scan
                       </button>
@@ -202,7 +246,7 @@ const MemberDashboard = () => {
           </div>
         </div>
 
-        {/* Right Column: Workout Routine (LOCKED UNTIL ATTENDANCE) */}
+        {/* Right Column: Workout Routine */}
         <div className="lg:col-span-2">
           <div className="bg-white/5 border border-white/10 p-8 rounded-[2.5rem] h-full shadow-2xl">
             <div className="flex justify-between items-center mb-10">
@@ -214,7 +258,6 @@ const MemberDashboard = () => {
               </span>
             </div>
 
-            {/* --- LOCKED STATE UI (ALSO CHECKS EXPIRY) --- */}
             {!attendanceStatus ? (
               <div className="h-80 flex flex-col items-center justify-center text-center">
                 <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 border ${
@@ -234,7 +277,6 @@ const MemberDashboard = () => {
                 </p>
               </div>
             ) : (
-              /* --- UNLOCKED STATE UI --- */
               workout.exercises && workout.exercises.length > 0 ? (
                 <div className="space-y-4">
                   {workout.exercises.map((ex, i) => (
