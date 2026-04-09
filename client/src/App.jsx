@@ -3,27 +3,35 @@ import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import TrainerDashboard from './pages/TrainerDashboard';
 import MemberDashboard from './pages/MemberDashboard';
-import AttendanceReport from './pages/AttendanceReport'; // 1. Naya page import kiya
+import AttendanceReport from './pages/AttendanceReport';
 
-// --- AUTO-REDIRECT LOGIC ---
+// --- AUTO-REDIRECT LOGIC (Public Routes) ---
 const PublicRoute = ({ children }) => {
   const profileInfo = localStorage.getItem('profile');
   if (profileInfo) {
-    const { user } = JSON.parse(profileInfo);
-    if (user.role === 'admin') return <Navigate to="/admin-dashboard" replace />;
-    if (user.role === 'trainer') return <Navigate to="/trainer-dashboard" replace />;
-    return <Navigate to="/member-dashboard" replace />;
+    // FIX: Destructure directly from parsed object, not from 'user'
+    const data = JSON.parse(profileInfo);
+    const role = data?.role;
+
+    if (role === 'admin') return <Navigate to="/admin-dashboard" replace />;
+    if (role === 'trainer') return <Navigate to="/trainer-dashboard" replace />;
+    if (role === 'member') return <Navigate to="/member-dashboard" replace />;
   }
   return children;
 };
 
-// --- PRIVATE ROUTE PROTECTOR (Optional but recommended) ---
+// --- PRIVATE ROUTE PROTECTOR ---
 const ProtectedRoute = ({ children, allowedRole }) => {
   const profileInfo = localStorage.getItem('profile');
   if (!profileInfo) return <Navigate to="/" replace />;
   
-  const { user } = JSON.parse(profileInfo);
-  if (allowedRole && user.role !== allowedRole) return <Navigate to="/" replace />;
+  // FIX: Backend sends data like { role: 'admin', ... }
+  const data = JSON.parse(profileInfo);
+  const role = data?.role;
+
+  if (allowedRole && role !== allowedRole) {
+    return <Navigate to="/" replace />;
+  }
   
   return children;
 };
@@ -32,7 +40,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Public Route */}
+        {/* Public Route: Sirf Login ke liye */}
         <Route 
           path="/" 
           element={
@@ -42,14 +50,43 @@ function App() {
           } 
         />
         
-        {/* Admin Routes */}
-        <Route path="/admin-dashboard" element={<AdminDashboard />} />
-        {/* 2. Naya Attendance Report Route */}
-        <Route path="/admin/attendance" element={<AttendanceReport />} />
+        {/* Admin Routes (Secure) */}
+        <Route 
+          path="/admin-dashboard" 
+          element={
+            <ProtectedRoute allowedRole="admin">
+              <AdminDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin/attendance" 
+          element={
+            <ProtectedRoute allowedRole="admin">
+              <AttendanceReport />
+            </ProtectedRoute>
+          } 
+        />
         
-        {/* Other Dashboards */}
-        <Route path="/trainer-dashboard" element={<TrainerDashboard />} />
-        <Route path="/member-dashboard" element={<MemberDashboard />} />
+        {/* Trainer Routes (Secure) */}
+        <Route 
+          path="/trainer-dashboard" 
+          element={
+            <ProtectedRoute allowedRole="trainer">
+              <TrainerDashboard />
+            </ProtectedRoute>
+          } 
+        />
+
+        {/* Member Routes (Secure) */}
+        <Route 
+          path="/member-dashboard" 
+          element={
+            <ProtectedRoute allowedRole="member">
+              <MemberDashboard />
+            </ProtectedRoute>
+          } 
+        />
         
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" />} />
