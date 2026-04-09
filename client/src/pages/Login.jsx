@@ -1,31 +1,45 @@
 import React, { useState } from 'react';
 import { signIn } from '../services/api';
-import { Link } from 'react-router-dom'; // 1. Import Link
+import { useNavigate } from 'react-router-dom'; // window.location se behtar hai
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate(); // Navigation hook
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       const { data } = await signIn(formData);
+      
+      // Pure data ko localstorage mein save karein
       localStorage.setItem('profile', JSON.stringify(data));
       
-      if (data.user.role === 'admin') window.location.href = '/admin-dashboard';
-      else if (data.user.role === 'trainer') window.location.href = '/trainer-dashboard';
-      else window.location.href = '/member-dashboard';
+      console.log("Login Success Data:", data);
+
+      // FIXED: Aapka backend data seedha { role, token... } bhej raha hai
+      // Isliye data.user.role ki jagah data.role use karein
+      if (data.role === 'admin') {
+        navigate('/admin-dashboard');
+      } else if (data.role === 'trainer') {
+        navigate('/trainer-dashboard');
+      } else {
+        navigate('/member-dashboard');
+      }
       
     } catch (error) {
-      alert("Access Denied: Invalid Credentials");
+      console.error("Login Error:", error);
+      alert(error.response?.data?.message || "Access Denied: Invalid Credentials");
     } finally {
+      // 🚨 Sabse zaroori: loading ko false karein taaki screen freeze na ho
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0f172a] relative overflow-hidden">
+      {/* Background Blurs */}
       <div className="absolute top-[-10%] left-[-10%] w-72 h-72 bg-blue-600 rounded-full blur-[120px] opacity-20"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-600 rounded-full blur-[120px] opacity-20"></div>
 
@@ -67,6 +81,7 @@ const Login = () => {
             </div>
 
             <button 
+              type="submit"
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-900/20 transform transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >
