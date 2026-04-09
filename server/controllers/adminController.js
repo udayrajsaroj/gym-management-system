@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const Attendance = require('../models/Attendance');
-const bcrypt = require('bcryptjs'); // 👈 Ensure this is installed
+const bcrypt = require('bcryptjs');
 
 /**
  * @desc    Get all users (Trainers and Members)
@@ -10,7 +10,7 @@ exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find()
       .select('-password')
-      .populate('assignedTrainer', 'name')
+      .populate('assignedTrainer', 'name') // Trainer ka naam fetch karne ke liye
       .sort({ createdAt: -1 });
     res.status(200).json(users);
   } catch (err) {
@@ -26,13 +26,19 @@ exports.addUser = async (req, res) => {
   try {
     const { name, email, password, role, expiryDate, assignedTrainer } = req.body;
 
+    // 1. Basic Validation
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ message: "Please provide all required fields." });
+    }
+
     const userExists = await User.findOne({ email });
     if (userExists) return res.status(400).json({ message: "User already registered" });
 
-    // Hash password before saving
+    // 2. Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // 3. Expiry logic for members
     let status = 'active';
     if (role === 'member' && expiryDate) {
       const today = new Date();
@@ -66,24 +72,35 @@ exports.updateUser = async (req, res) => {
   try {
     const { name, email, role, expiryDate, membershipStatus, password, assignedTrainer } = req.body;
     
-    // Find user first
+    // 1. Check if user exists
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    let updateData = { name, email, role, assignedTrainer };
+    // 2. Prepare update data
+    let updateData = { 
+      name: name || user.name, 
+      email: email || user.email, 
+      role: role || user.role, 
+      assignedTrainer: assignedTrainer !== undefined ? assignedTrainer : user.assignedTrainer 
+    };
 
-    // Membership Status Auto-update logic
-    if (role === 'member' && expiryDate) {
-      updateData.expiryDate = expiryDate;
-      const selectedDate = new Date(expiryDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0); 
-      updateData.membershipStatus = selectedDate >= today ? 'active' : 'expired';
+    // 3. Membership Auto-update Logic
+    if (updateData.role === 'member') {
+      if (expiryDate) {
+        updateData.expiryDate = expiryDate;
+        const selectedDate = new Date(expiryDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); 
+        updateData.membershipStatus = selectedDate >= today ? 'active' : 'expired';
+      } else {
+        updateData.membershipStatus = membershipStatus || user.membershipStatus;
+      }
     } else {
-      updateData.membershipStatus = membershipStatus;
+      updateData.membershipStatus = 'none';
+      updateData.expiryDate = null;
     }
 
-    // Password Hashing Fix: Hash only if password is provided
+    // 4. Password Hashing (Only if a NEW password is sent)
     if (password && password.trim() !== "") {
       const salt = await bcrypt.genSalt(10);
       updateData.password = await bcrypt.hash(password, salt);
@@ -97,8 +114,8 @@ exports.updateUser = async (req, res) => {
 
     res.json({ message: "Update successful", user: updatedUser });
   } catch (err) {
-    console.error("Update Controller Error:", err);
-    res.status(500).json({ message: "Internal Server Error during update" });
+    console.error("Update Controller Error:", err.message);
+    res.status(500).json({ message: "Internal Server Error: Update failed." });
   }
 };
 
@@ -118,29 +135,7 @@ exports.deleteUser = async (req, res) => {
 };
 
 /**
- * @desc    Membership Alerts (Next 7 days)
- */
-exports.getExpiringMembers = async (req, res) => {
-  try {
-    const today = new Date();
-    const alertWindow = new Date();
-    alertWindow.setDate(today.getDate() + 7);
-
-    const alerts = await User.find({
-      role: 'member',
-      expiryDate: { $lte: alertWindow, $gte: today }
-    }).select('name email expiryDate membershipStatus');
-
-    res.json(alerts);
-  } catch (err) {
-    res.status(500).json({ message: "Error fetching membership alerts" });
-  }
-};
-
-// --- ATTENDANCE ANALYTICS ---
-
-/**
- * @desc    Overall attendance report
+ * @desc    Attendance Report with Lean for performance
  */
 exports.getAttendanceReport = async (req, res) => {
   try {
@@ -149,10 +144,9 @@ exports.getAttendanceReport = async (req, res) => {
       .sort({ date: -1 })
       .lean();
 
-    // Map to handle deleted/null users gracefully
     const safeLogs = logs.map(log => ({
       ...log,
-      memberId: log.memberId || { name: "Unknown User", email: "N/A" }
+      memberId: log.memberId || { name: "Deleted User", email: "N/A" }
     }));
 
     res.status(200).json(safeLogs);
@@ -163,7 +157,7 @@ exports.getAttendanceReport = async (req, res) => {
 };
 
 /**
- * @desc    Individual member statistics
+ * @desc    Member stats with logic fixes
  */
 exports.getMemberStats = async (req, res) => {
   try {
@@ -187,7 +181,7 @@ exports.getMemberStats = async (req, res) => {
       totalPresent,
       totalAbsent: totalAbsent < 0 ? 0 : totalAbsent,
       totalDaysSinceJoined,
-      attendancePercentage: attendancePercentage > 100 ? 100 : attendancePercentage
+      attendancePercentage: attendancePercentage > 100 ? "100.0" : attendancePercentage
     });
   } catch (err) {
     console.error("Stats Calc Error:", err);
