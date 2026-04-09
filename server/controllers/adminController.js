@@ -10,7 +10,7 @@ exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find()
       .select('-password')
-      .populate('assignedTrainer', 'name') // Trainer ka naam fetch karne ke liye
+      .populate('assignedTrainer', 'name')
       .sort({ createdAt: -1 });
     res.status(200).json(users);
   } catch (err) {
@@ -26,7 +26,6 @@ exports.addUser = async (req, res) => {
   try {
     const { name, email, password, role, expiryDate, assignedTrainer } = req.body;
 
-    // 1. Basic Validation
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: "Please provide all required fields." });
     }
@@ -34,11 +33,9 @@ exports.addUser = async (req, res) => {
     const userExists = await User.findOne({ email });
     if (userExists) return res.status(400).json({ message: "User already registered" });
 
-    // 2. Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 3. Expiry logic for members
     let status = 'active';
     if (role === 'member' && expiryDate) {
       const today = new Date();
@@ -72,11 +69,9 @@ exports.updateUser = async (req, res) => {
   try {
     const { name, email, role, expiryDate, membershipStatus, password, assignedTrainer } = req.body;
     
-    // 1. Check if user exists
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // 2. Prepare update data
     let updateData = { 
       name: name || user.name, 
       email: email || user.email, 
@@ -84,7 +79,6 @@ exports.updateUser = async (req, res) => {
       assignedTrainer: assignedTrainer !== undefined ? assignedTrainer : user.assignedTrainer 
     };
 
-    // 3. Membership Auto-update Logic
     if (updateData.role === 'member') {
       if (expiryDate) {
         updateData.expiryDate = expiryDate;
@@ -100,7 +94,6 @@ exports.updateUser = async (req, res) => {
       updateData.expiryDate = null;
     }
 
-    // 4. Password Hashing (Only if a NEW password is sent)
     if (password && password.trim() !== "") {
       const salt = await bcrypt.genSalt(10);
       updateData.password = await bcrypt.hash(password, salt);
@@ -135,7 +128,28 @@ exports.deleteUser = async (req, res) => {
 };
 
 /**
- * @desc    Attendance Report with Lean for performance
+ * @desc    Get members whose plans expire soon (Missing in your previous code)
+ * @route   GET /api/admin/alerts
+ */
+exports.getExpiringMembers = async (req, res) => {
+  try {
+    const today = new Date();
+    const alertWindow = new Date();
+    alertWindow.setDate(today.getDate() + 7);
+
+    const alerts = await User.find({
+      role: 'member',
+      expiryDate: { $lte: alertWindow, $gte: today }
+    }).select('name email expiryDate membershipStatus');
+
+    res.json(alerts);
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching membership alerts" });
+  }
+};
+
+/**
+ * @desc    Attendance Report
  */
 exports.getAttendanceReport = async (req, res) => {
   try {
@@ -157,7 +171,7 @@ exports.getAttendanceReport = async (req, res) => {
 };
 
 /**
- * @desc    Member stats with logic fixes
+ * @desc    Member stats
  */
 exports.getMemberStats = async (req, res) => {
   try {
