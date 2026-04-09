@@ -6,19 +6,19 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
     name: '', email: '', password: '', role: 'member', 
     expiryDate: '', membershipStatus: 'active', assignedTrainer: ''
   });
-  const [trainers, setTrainers] = useState([]); // To store list of trainers
+  const [trainers, setTrainers] = useState([]); 
   const [loading, setLoading] = useState(false);
 
-  // 1. Fetch Trainers list so Admin can assign them to Members
   useEffect(() => {
     const fetchTrainers = async () => {
-      if (!isOpen) return; // Modal open hone par hi fetch karein
+      if (!isOpen) return;
       try {
-        const token = JSON.parse(localStorage.getItem('profile')).token;
+        const profile = localStorage.getItem('profile');
+        if (!profile) return;
+        const token = JSON.parse(profile).token;
         const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/users`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        // Filter to only get users with the 'trainer' role
         setTrainers(data.filter(u => u.role === 'trainer'));
       } catch (err) {
         console.error("Error fetching trainers list", err);
@@ -27,10 +27,8 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
     fetchTrainers();
   }, [isOpen]);
 
-  // 2. Sync form when editing
   useEffect(() => {
     if (editingUser && isOpen) {
-      // FIX 1: Safe Date Parsing
       let safeExpiryDate = '';
       if (editingUser.expiryDate) {
         const dateObj = new Date(editingUser.expiryDate);
@@ -39,7 +37,6 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
         }
       }
 
-      // FIX 2: Handle populated assignedTrainer object vs raw ID
       let trainerId = '';
       if (editingUser.assignedTrainer) {
         trainerId = typeof editingUser.assignedTrainer === 'object' 
@@ -50,14 +47,13 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
       setFormData({
         name: editingUser.name || '',
         email: editingUser.email || '',
-        password: '', // Keep empty for security, admin can leave blank if not updating
+        password: '', 
         role: editingUser.role || 'member',
         membershipStatus: editingUser.membershipStatus || 'active',
         assignedTrainer: trainerId || '',
         expiryDate: safeExpiryDate
       });
     } else {
-      // Reset form when adding new user
       setFormData({
         name: '', email: '', password: '', role: 'member', 
         expiryDate: '', membershipStatus: 'active', assignedTrainer: ''
@@ -65,16 +61,14 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
     }
   }, [editingUser, isOpen]);
 
-  // 3. Handle Role Change (Hide/Show membership logic)
   const handleRoleChange = (newRole) => {
     const isStaff = newRole === 'admin' || newRole === 'trainer';
     setFormData({
       ...formData,
       role: newRole,
-      // If Admin or Trainer, status is always 'none' and no expiry/trainer assignment
       membershipStatus: isStaff ? 'none' : 'active',
-      expiryDate: isStaff ? '' : formData.expiryDate,
-      assignedTrainer: isStaff ? '' : formData.assignedTrainer
+      expiryDate: '', // Reset expiry on role change
+      assignedTrainer: '' 
     });
   };
 
@@ -84,27 +78,45 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const token = JSON.parse(localStorage.getItem('profile')).token;
+      const profile = localStorage.getItem('profile');
+      if (!profile) return;
+      const token = JSON.parse(profile).token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
       
-      // Data to send (If password is empty during edit, remove it so backend doesn't overwrite with empty string)
-      const dataToSend = { ...formData };
-      if (editingUser && !dataToSend.password) {
-        delete dataToSend.password; 
+      // --- CRITICAL FIX: CLEAN DATA BEFORE SENDING ---
+      const dataToSend = {
+        name: formData.name,
+        email: formData.email,
+        role: formData.role
+      };
+
+      // Password sirf tab bhejo jab naya ho ya Create ho raha ho
+      if (formData.password.trim() !== "") {
+        dataToSend.password = formData.password;
+      }
+
+      // Member specific fields: Agar Trainer/Admin hai toh ye fields mat bhejo
+      if (formData.role === 'member') {
+        dataToSend.membershipStatus = formData.membershipStatus;
+        if (formData.expiryDate) dataToSend.expiryDate = formData.expiryDate;
+        if (formData.assignedTrainer) dataToSend.assignedTrainer = formData.assignedTrainer;
+      } else {
+        // Staff ke liye expiry date null bhejo taaki backend crash na ho
+        dataToSend.expiryDate = null;
+        dataToSend.membershipStatus = 'none';
       }
 
       if (editingUser) {
         await axios.put(`${import.meta.env.VITE_API_URL}/api/admin/update-user/${editingUser._id}`, dataToSend, config);
-        alert("Profile Updated Successfully!");
       } else {
         await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/add-user`, dataToSend, config);
-        alert("User Created Successfully!");
       }
       
       onUserAdded();
       onClose();
     } catch (err) {
-      alert(err.response?.data?.message || "Action failed");
+      console.error("Submission Error:", err.response?.data);
+      alert(err.response?.data?.message || "Action failed. Check console for details.");
     } finally {
       setLoading(false);
     }
@@ -135,7 +147,7 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
 
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-              Password {editingUser && <span className="text-slate-500 lowercase">(leave blank to keep current)</span>}
+              Password {editingUser && <span className="text-slate-500 lowercase">(blank to keep current)</span>}
             </label>
             <input type="password" required={!editingUser} value={formData.password} className="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl mt-1 text-white outline-none focus:ring-2 focus:ring-blue-500"
               onChange={(e) => setFormData({...formData, password: e.target.value})} />
@@ -151,7 +163,6 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
             </select>
           </div>
 
-          {/* --- MEMBER ONLY FIELDS --- */}
           {formData.role === 'member' && (
             <>
               <div className="md:col-span-2 border-t border-white/5 pt-4 mt-2">
@@ -176,8 +187,8 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
           )}
 
           <div className="md:col-span-2 flex gap-3 mt-6">
-            <button type="button" onClick={onClose} className="flex-1 bg-white/5 text-white font-bold py-4 rounded-xl hover:bg-white/10 transition-colors">Cancel</button>
-            <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-500 active:scale-95 disabled:opacity-50 transition-all">
+            <button type="button" onClick={onClose} className="flex-1 bg-white/5 text-white font-bold py-4 rounded-xl hover:bg-white/10">Cancel</button>
+            <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-blue-500 active:scale-95 disabled:opacity-50">
               {loading ? "Saving..." : editingUser ? "Save Changes" : "Create User"}
             </button>
           </div>
