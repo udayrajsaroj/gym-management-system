@@ -9,6 +9,7 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
   const [trainers, setTrainers] = useState([]); 
   const [loading, setLoading] = useState(false);
 
+  // 1. Fetch Trainers list
   useEffect(() => {
     const fetchTrainers = async () => {
       if (!isOpen) return;
@@ -27,6 +28,7 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
     fetchTrainers();
   }, [isOpen]);
 
+  // 2. Sync form when editing
   useEffect(() => {
     if (editingUser && isOpen) {
       let safeExpiryDate = '';
@@ -67,7 +69,7 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
       ...formData,
       role: newRole,
       membershipStatus: isStaff ? 'none' : 'active',
-      expiryDate: '', // Reset expiry on role change
+      expiryDate: '', 
       assignedTrainer: '' 
     });
   };
@@ -83,40 +85,44 @@ const AddUserModal = ({ isOpen, onClose, onUserAdded, editingUser }) => {
       const token = JSON.parse(profile).token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
       
-      // --- CRITICAL FIX: CLEAN DATA BEFORE SENDING ---
+      // --- CLEAN DATA OBJECT ---
       const dataToSend = {
         name: formData.name,
         email: formData.email,
         role: formData.role
       };
 
-      // Password sirf tab bhejo jab naya ho ya Create ho raha ho
-      if (formData.password.trim() !== "") {
+      // Password sirf tab bhejo jab naya type kiya ho
+      if (formData.password && formData.password.trim() !== "") {
         dataToSend.password = formData.password;
       }
 
-      // Member specific fields: Agar Trainer/Admin hai toh ye fields mat bhejo
+      // Role specific fields validation
       if (formData.role === 'member') {
         dataToSend.membershipStatus = formData.membershipStatus;
-        if (formData.expiryDate) dataToSend.expiryDate = formData.expiryDate;
-        if (formData.assignedTrainer) dataToSend.assignedTrainer = formData.assignedTrainer;
+        // Agar date empty string hai toh null bhejo ya skip karo
+        dataToSend.expiryDate = formData.expiryDate || null;
+        dataToSend.assignedTrainer = formData.assignedTrainer || null;
       } else {
-        // Staff ke liye expiry date null bhejo taaki backend crash na ho
+        // Staff ke liye expiry aur trainer null bhejo taaki backend crash na ho
         dataToSend.expiryDate = null;
+        dataToSend.assignedTrainer = null;
         dataToSend.membershipStatus = 'none';
       }
 
       if (editingUser) {
         await axios.put(`${import.meta.env.VITE_API_URL}/api/admin/update-user/${editingUser._id}`, dataToSend, config);
+        alert("User Updated Successfully!");
       } else {
         await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/add-user`, dataToSend, config);
+        alert("User Created Successfully!");
       }
       
       onUserAdded();
       onClose();
     } catch (err) {
       console.error("Submission Error:", err.response?.data);
-      alert(err.response?.data?.message || "Action failed. Check console for details.");
+      alert(err.response?.data?.message || "Action failed. Check backend logs.");
     } finally {
       setLoading(false);
     }

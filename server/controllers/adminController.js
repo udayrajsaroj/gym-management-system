@@ -64,6 +64,7 @@ exports.addUser = async (req, res) => {
 /**
  * @desc    Update user details or renew membership
  * @route   PUT /api/admin/update-user/:id
+ * @FIXED   Trainer/Admin update issue resolved
  */
 exports.updateUser = async (req, res) => {
   try {
@@ -72,15 +73,24 @@ exports.updateUser = async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // Initial update object with common fields
     let updateData = { 
       name: name || user.name, 
       email: email || user.email, 
       role: role || user.role, 
-      assignedTrainer: assignedTrainer !== undefined ? assignedTrainer : user.assignedTrainer 
     };
 
+    // 1. Password Update Logic
+    if (password && password.trim() !== "") {
+      const salt = await bcrypt.genSalt(10);
+      updateData.password = await bcrypt.hash(password, salt);
+    }
+
+    // 2. Role Specific Data Handling (The Fix)
     if (updateData.role === 'member') {
-      if (expiryDate) {
+      updateData.assignedTrainer = assignedTrainer !== undefined ? assignedTrainer : user.assignedTrainer;
+      
+      if (expiryDate && expiryDate.trim() !== "") {
         updateData.expiryDate = expiryDate;
         const selectedDate = new Date(expiryDate);
         const today = new Date();
@@ -90,13 +100,11 @@ exports.updateUser = async (req, res) => {
         updateData.membershipStatus = membershipStatus || user.membershipStatus;
       }
     } else {
+      // 🚨 FIXED: Admin/Trainer ke liye non-member fields ko reset karna zaroori hai
+      // Isse Mongoose Date validation crash nahi hota
       updateData.membershipStatus = 'none';
       updateData.expiryDate = null;
-    }
-
-    if (password && password.trim() !== "") {
-      const salt = await bcrypt.genSalt(10);
-      updateData.password = await bcrypt.hash(password, salt);
+      updateData.assignedTrainer = null;
     }
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -128,8 +136,7 @@ exports.deleteUser = async (req, res) => {
 };
 
 /**
- * @desc    Get members whose plans expire soon (Missing in your previous code)
- * @route   GET /api/admin/alerts
+ * @desc    Get members whose plans expire soon
  */
 exports.getExpiringMembers = async (req, res) => {
   try {
