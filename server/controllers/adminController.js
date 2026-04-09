@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const Attendance = require('../models/Attendance');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs'); // 👈 Ensure this is installed
 
 /**
  * @desc    Get all users (Trainers and Members)
@@ -8,7 +8,10 @@ const bcrypt = require('bcryptjs');
  */
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    const users = await User.find()
+      .select('-password')
+      .populate('assignedTrainer', 'name')
+      .sort({ createdAt: -1 });
     res.status(200).json(users);
   } catch (err) {
     res.status(500).json({ message: "Server Error: Could not fetch users" });
@@ -26,6 +29,7 @@ exports.addUser = async (req, res) => {
     const userExists = await User.findOne({ email });
     if (userExists) return res.status(400).json({ message: "User already registered" });
 
+    // Hash password before saving
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -49,6 +53,7 @@ exports.addUser = async (req, res) => {
     await newUser.save();
     res.status(201).json({ message: `${role} created successfully!` });
   } catch (err) {
+    console.error("Add User Error:", err);
     res.status(500).json({ message: "Error creating user profile" });
   }
 };
@@ -60,16 +65,25 @@ exports.addUser = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { name, email, role, expiryDate, membershipStatus, password, assignedTrainer } = req.body;
-    let updateData = { name, email, role, expiryDate, membershipStatus, assignedTrainer };
+    
+    // Find user first
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
 
+    let updateData = { name, email, role, assignedTrainer };
+
+    // Membership Status Auto-update logic
     if (role === 'member' && expiryDate) {
+      updateData.expiryDate = expiryDate;
       const selectedDate = new Date(expiryDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0); 
-
       updateData.membershipStatus = selectedDate >= today ? 'active' : 'expired';
+    } else {
+      updateData.membershipStatus = membershipStatus;
     }
 
+    // Password Hashing Fix: Hash only if password is provided
     if (password && password.trim() !== "") {
       const salt = await bcrypt.genSalt(10);
       updateData.password = await bcrypt.hash(password, salt);
@@ -81,17 +95,15 @@ exports.updateUser = async (req, res) => {
       { new: true, runValidators: true }
     ).select('-password');
 
-    if (!updatedUser) return res.status(404).json({ message: "User not found" });
-
     res.json({ message: "Update successful", user: updatedUser });
   } catch (err) {
-    res.status(500).json({ message: "Error updating user information" });
+    console.error("Update Controller Error:", err);
+    res.status(500).json({ message: "Internal Server Error during update" });
   }
 };
 
 /**
- * @desc    Delete a user (Member or Trainer)
- * @route   DELETE /api/admin/delete-user/:id
+ * @desc    Delete a user
  */
 exports.deleteUser = async (req, res) => {
   try {
@@ -106,8 +118,7 @@ exports.deleteUser = async (req, res) => {
 };
 
 /**
- * @desc    Get members whose plans expire in the next 7 days
- * @route   GET /api/admin/expiring-soon
+ * @desc    Membership Alerts (Next 7 days)
  */
 exports.getExpiringMembers = async (req, res) => {
   try {
@@ -117,7 +128,7 @@ exports.getExpiringMembers = async (req, res) => {
 
     const alerts = await User.find({
       role: 'member',
-      expiryDate: { $lte: alertWindow }
+      expiryDate: { $lte: alertWindow, $gte: today }
     }).select('name email expiryDate membershipStatus');
 
     res.json(alerts);
@@ -126,21 +137,19 @@ exports.getExpiringMembers = async (req, res) => {
   }
 };
 
-// --- ATTENDANCE ANALYTICS FUNCTIONS ---
+// --- ATTENDANCE ANALYTICS ---
 
 /**
- * @desc    Get overall attendance logs for Admin
- * @route   GET /api/admin/attendance-report
+ * @desc    Overall attendance report
  */
 exports.getAttendanceReport = async (req, res) => {
   try {
-    // Populate ke saath null check handle karne ke liye lean query
     const logs = await Attendance.find()
       .populate('memberId', 'name email')
       .sort({ date: -1 })
       .lean();
 
-    // Agar logs nahi hain toh empty array bhejein 404 nahi
+    // Map to handle deleted/null users gracefully
     const safeLogs = logs.map(log => ({
       ...log,
       memberId: log.memberId || { name: "Unknown User", email: "N/A" }
@@ -148,34 +157,28 @@ exports.getAttendanceReport = async (req, res) => {
 
     res.status(200).json(safeLogs);
   } catch (error) {
-    console.error("Report Fetch Error:", error);
+    console.error("Report Error:", error);
     res.status(500).json({ message: "Failed to fetch attendance report" });
   }
 };
 
 /**
- * @desc    Get Present/Absent stats for a specific member
- * @route   GET /api/admin/member-stats/:id
+ * @desc    Individual member statistics
  */
 exports.getMemberStats = async (req, res) => {
   try {
     const memberId = req.params.id;
     const member = await User.findById(memberId);
     
-    if (!member) return res.status(404).json({ message: "Member not found in database" });
+    if (!member) return res.status(404).json({ message: "Member not found" });
 
-    // 1. Total Present count
     const totalPresent = await Attendance.countDocuments({ memberId });
-
-    // 2. Joining date calculation
     const joinDate = new Date(member.createdAt);
     const today = new Date();
     
-    // Difference in days
     const diffTime = Math.abs(today - joinDate);
     const totalDaysSinceJoined = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
 
-    // 3. Stats logic
     const totalAbsent = totalDaysSinceJoined - totalPresent;
     const attendancePercentage = ((totalPresent / totalDaysSinceJoined) * 100).toFixed(1);
 
@@ -187,7 +190,7 @@ exports.getMemberStats = async (req, res) => {
       attendancePercentage: attendancePercentage > 100 ? 100 : attendancePercentage
     });
   } catch (err) {
-    console.error("Member Stats Error:", err);
+    console.error("Stats Calc Error:", err);
     res.status(500).json({ message: "Backend error calculating statistics" });
   }
 };
