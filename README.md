@@ -23,6 +23,24 @@ IronPulse is a modern, full-stack gym administration platform built with the MER
 
 ---
 
+## 📂 Project Structure
+
+```text
+IronPulse/
+├── backend/
+│   ├── controllers/      # Logic for auth, attendance, and token generation
+│   ├── models/           # MongoDB schemas (Member, Attendance, Token)
+│   ├── routes/           # Express API endpoints
+│   └── server.js         # Entry point for the backend
+└── frontend/
+    ├── public/
+    └── src/
+        ├── components/   # Reusable UI parts (QR Scanner, Navbar)
+        ├── pages/        # Main views (Dashboard, Login)
+        └── App.js        # React router and main layout
+```
+---
+
 **💻 How to Run Locally:**
 ```bash
 # Clone this specific repository
